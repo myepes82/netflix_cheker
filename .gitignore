@@ -1,0 +1,23 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.vscode/
+malformed_accounts/
+./malformed_accounts
+malformed_accounts
+malformed_proxies/
+./malformed_proxies
+malformed_proxies
+working_accounts/
+./working_accounts
+working_accounts
+notworking_accounts/
+./notworking_accounts
+notworking_accounts
+*.txt
+!requirements.txt
