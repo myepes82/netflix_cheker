@@ -4,6 +4,7 @@ from io import TextIOWrapper
 from datetime import datetime
 from mechanize import HTTPError
 
+import subprocess
 import math
 import os
 import mechanize
@@ -229,6 +230,10 @@ def check_accounts(accounts: list[tuple], proxies: list[tuple]) -> None:
 
 def init_schedule(function, time: int) -> None:
     schedule.every(time).seconds.do(function)
+
+def switch_ip() -> None:
+    command = "sudo protonvpn c -r"
+    subprocess.Popen(command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 def setup() -> None:
     global MALFORMED_ACCOUNTS_FOLDER
